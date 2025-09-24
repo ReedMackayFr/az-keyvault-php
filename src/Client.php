@@ -4,22 +4,23 @@
 namespace AzKeyVault;
 
 use Spatie\Url\Url;
+use Illuminate\Support\Facades\Log;
 
-class Client {
+class Client
+{
     public const OAUTH_API_VERSION = '2019-08-01';
-
-    public const VAULT_API_VERSION = '7.0';
+    public const VAULT_API_VERSION = '7.4';
 
     /** @var \GuzzleHttp\Client */
     protected $client;
-
     /** @var void */
     protected $accessToken;
 
     /**
      * Client constructor
      */
-    public function __construct() {
+    public function __construct()
+    {
         $this->client = new \GuzzleHttp\Client();
         $this->accessToken = $this->getAccessToken();
     }
@@ -32,35 +33,79 @@ class Client {
      * @param string $apiVersion
      * @return mixed
      */
-    public function get(string $url, string $accessToken = null, string $accessTokenHeader = 'Authorization', string $apiVersion = self::VAULT_API_VERSION) {
+    public function get(string $url, string $accessToken = null, string $accessTokenHeader = 'Authorization', string $apiVersion = self::VAULT_API_VERSION)
+    {
         $url = Url::fromString($url)->withQueryParameter('api-version', $apiVersion);
         return json_decode($this->client->get($url, [
-            'headers' => [$accessTokenHeader => $accessToken ?? $this->accessToken],
+                'headers' => [$accessTokenHeader => $accessToken ?? $this->accessToken],
         ])->getBody());
     }
 
-	/**
-	 * Wrapper for HTTP Post requests
-	 * @param string $url
-	 * @param array $body
-	 * @param string|null $accessToken
-	 * @param string $accessTokenHeader
-	 * @param string $apiVersion
-	 * @return mixed
-	 */
-    public function post(string $url, array $body, string $accessToken = null, string $accessTokenHeader = 'Authorization', string $apiVersion = self::VAULT_API_VERSION) {
+    /**
+     * Wrapper for HTTP Post requests
+     * @param string $url
+     * @param array $body
+     * @param string|null $accessToken
+     * @param string $accessTokenHeader
+     * @param string $apiVersion
+     * @return mixed
+     */
+    public function post(string $url, array $body, string $accessToken = null, string $accessTokenHeader = 'Authorization', string $apiVersion = self::VAULT_API_VERSION)
+    {
         $url = Url::fromString($url)->withQueryParameter('api-version', $apiVersion);
-        return json_decode($this->client->post($url, [
-            'headers' => [$accessTokenHeader => $accessToken ?? $this->accessToken],
-			'body' => $body,
-        ])->getBody());
+        try {
+            return json_decode($this->client->post($url, [
+                    'headers' => [$accessTokenHeader => $accessToken ?? $this->accessToken],
+                    'json' => $body,
+            ])->getBody());
+        } catch (\Exception $e) {
+            Log::critical('AZ Key Vault - POST API call failed', [
+                    'error' => $e->getMessage(),
+                    'url' => (string)$url
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Wrapper for HTTP Put requests
+     * @param string $url
+     * @param array $body
+     * @param string|null $accessToken
+     * @param string $accessTokenHeader
+     * @param string $apiVersion
+     * @return mixed
+     */
+    public function put(string $url, array $body, string $accessToken = null, string $accessTokenHeader = 'Authorization', string $apiVersion = self::VAULT_API_VERSION)
+    {
+
+        $url = Url::fromString($url)->withQueryParameter('api-version', $apiVersion);
+
+        try {
+            $response = $this->client->put($url, [
+                    'headers' => [$accessTokenHeader => $accessToken ?? $this->accessToken],
+                    'json' => $body,
+            ]);
+
+            $responseBody = $response->getBody()->getContents();
+
+            return json_decode($responseBody);
+
+        } catch (\Exception $e) {
+            Log::critical('AZ Key Vault - PUT API call failed', [
+                    'error' => $e->getMessage(),
+                    'url' => (string)$url
+            ]);
+            throw $e;
+        }
     }
 
     /**
      * Get access token using managed identity
      * @return string
      */
-    protected function getAccessToken() {
+    protected function getAccessToken()
+    {
         // Get MSI endpoint & token from environment (App Service) or use hardcoded values in case of VM
         $endpoint = $this->env('IDENTITY_ENDPOINT', 'http://169.254.169.254/metadata/identity/oauth2/token');
         $idHeaderValue = $this->env('IDENTITY_HEADER', 'true');
@@ -78,7 +123,8 @@ class Client {
      * @param string $fallback
      * @return array|string
      */
-    private function env(string $name, string $fallback = '') {
+    private function env(string $name, string $fallback = '')
+    {
         $value = getenv($name);
         return $value !== false ? $value : $fallback;
     }
